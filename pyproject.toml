@@ -1,0 +1,30 @@
+[project]
+name = "awesome-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Ashish Nayke", email = "ashishnayke01@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "psycopg[binary]>=3.3.5",
+    "python-dotenv>=1.2.3",
+    "sqlalchemy>=2.0.52",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[project.scripts]
+awesome-project = "awesome_project:main"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "alembic>=1.19.2",
+    "pytest>=9.1.1",
+    "ruff>=0.16.6",
+]
