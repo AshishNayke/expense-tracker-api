@@ -11,8 +11,18 @@ from awesome_project.models import Base
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
 load_dotenv()
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+
+database_url = os.environ["DATABASE_URL"]
+
+if context.get_x_argument(as_dictionary=True).get("test") == "true":
+    database_url = database_url.replace(
+        "expense_tracker",
+        "expense_tracker_test",
+    )
+
+config.set_main_option("sqlalchemy.url", database_url)
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:

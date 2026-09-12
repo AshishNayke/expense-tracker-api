@@ -1,6 +1,7 @@
 from fastapi import FastAPI , HTTPException , Depends 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from .database import get_db
 from .models import Expense
 from decimal import Decimal
@@ -60,7 +61,12 @@ def create_expense(
     category=expense.category,
 )
     db.add(new_expense)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise
+
     db.refresh(new_expense)
     return new_expense
 
