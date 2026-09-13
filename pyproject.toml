@@ -1,7 +1,7 @@
 [project]
 name = "awesome-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "A REST API for managing personal expenses"
 readme = "README.md"
 authors = [
     { name = "Ashish Nayke", email = "ashishnayke01@gmail.com" }
@@ -29,3 +29,6 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.6",
 ]
+
+[tool.ruff.lint]
+ignore = ["B008"]

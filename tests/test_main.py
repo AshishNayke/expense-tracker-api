@@ -2,15 +2,15 @@ def test_root(client):
     response = client.get("/")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "message": "Expense Tracker API is running"
-    }
+    assert response.json() == {"message": "Expense Tracker API is running"}
+
 
 def test_get_expenses(client):
     response = client.get("/expenses")
 
     assert response.status_code == 200
     assert response.json() == []
+
 
 def test_create_expense(client):
     response = client.post(
@@ -30,6 +30,7 @@ def test_create_expense(client):
     assert data["amount"] == "150.00"
     assert data["category"] == "Food"
     assert "id" in data
+
 
 def test_get_expense(client):
     create_response = client.post(
@@ -58,9 +59,8 @@ def test_get_expense_not_found(client):
     response = client.get("/expenses/999999")
 
     assert response.status_code == 404
-    assert response.json() == {
-        "detail": "Expense not found"
-    }
+    assert response.json() == {"detail": "Expense not found"}
+
 
 def test_update_expense(client):
     create_response = client.post(
@@ -113,9 +113,8 @@ def test_update_expense_not_found(client):
     )
 
     assert response.status_code == 404
-    assert response.json() == {
-        "detail": "Expense not found"
-    }
+    assert response.json() == {"detail": "Expense not found"}
+
 
 def test_patch_expense(client):
     create_response = client.post(
@@ -164,6 +163,40 @@ def test_patch_expense_not_found(client):
     )
 
     assert response.status_code == 404
-    assert response.json() == {
-        "detail": "Expense not found"
-    }
+    assert response.json() == {"detail": "Expense not found"}
+
+
+def test_get_expense_by_category(client):
+    client.post(
+        "/expenses",
+        json={
+            "title": "Groceries",
+            "amount": "500.00",
+            "category": "Food",
+        },
+    )
+
+    client.post(
+        "/expenses",
+        json={
+            "title": "Bus ticket",
+            "amount": "50.00",
+            "category": "Transport",
+        },
+    )
+
+    client.post(
+        "/expenses",
+        json={
+            "title": "Restaurant",
+            "amount": "300.00",
+            "category": "Food",
+        },
+    )
+    response = client.get("/expenses?category=Food")
+    assert response.status_code == 200
+
+    data = response.json()
+    for item in data:
+        assert item["category"] == "Food"
+    assert len(data) == 2
