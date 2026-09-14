@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Expense
+from ..models import Expense, User
 from ..schemas import (
     ExpenseCreate,
     ExpensePatch,
     ExpenseResponse,
     ExpenseUpdate,
 )
+from ..security import get_current_user
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -21,8 +22,9 @@ def get_expenses(
     limit: int = Query(default=20, gt=0, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    stmt = select(Expense)
+    stmt = select(Expense).where(Expense.user_id == current_user.id)
 
     if category is not None:
         stmt = stmt.where(Expense.category == category)
@@ -38,8 +40,13 @@ def get_expenses(
 def get_expense(
     expense_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    expense = db.get(Expense, expense_id)
+    stmt = select(Expense).where(
+        Expense.id == expense_id,
+        Expense.user_id == current_user.id,
+    )
+    expense = db.scalar(stmt)
 
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
@@ -47,15 +54,21 @@ def get_expense(
     return expense
 
 
-@router.post("", response_model=ExpenseResponse)
+@router.post(
+    "", 
+    response_model=ExpenseResponse, 
+    status_code=status.HTTP_201_CREATED,
+)
 def create_expense(
     expense: ExpenseCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     new_expense = Expense(
         title=expense.title,
         amount=expense.amount,
         category=expense.category,
+        user_id=current_user.id,
     )
 
     db.add(new_expense)
@@ -75,8 +88,13 @@ def update_expense(
     expense_id: int,
     expense: ExpenseUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    existing_expense = db.get(Expense, expense_id)
+    stmt = select(Expense).where(
+        Expense.id == expense_id,
+        Expense.user_id == current_user.id,
+    )
+    existing_expense = db.scalar(stmt)
 
     if existing_expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
@@ -85,7 +103,12 @@ def update_expense(
     existing_expense.amount = expense.amount
     existing_expense.category = expense.category
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise
+
     db.refresh(existing_expense)
 
     return existing_expense
@@ -96,8 +119,13 @@ def patch_expense(
     expense_id: int,
     expense: ExpensePatch,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    existing_expense = db.get(Expense, expense_id)
+    stmt = select(Expense).where(
+        Expense.id == expense_id,
+        Expense.user_id == current_user.id,
+    )
+    existing_expense = db.scalar(stmt)
 
     if existing_expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
@@ -113,7 +141,12 @@ def patch_expense(
     for field, value in updates.items():
         setattr(existing_expense, field, value)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise
+
     db.refresh(existing_expense)
 
     return existing_expense
@@ -123,13 +156,21 @@ def patch_expense(
 def delete_expense(
     expense_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    expense = db.get(Expense, expense_id)
+    stmt = select(Expense).where(
+        Expense.id == expense_id,
+        Expense.user_id == current_user.id,
+    )
+    expense = db.scalar(stmt)
 
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
 
     db.delete(expense)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
 
     return expense

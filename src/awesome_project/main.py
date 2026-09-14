@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 
 from .routers.expenses import router as expenses_router
+from .routers.users import router as users_router
 
 app = FastAPI(title="Expense Tracker API")
-
 
 @app.get("/")
 def root():
@@ -11,3 +11,4 @@ def root():
 
 
 app.include_router(expenses_router)
+app.include_router(users_router)
