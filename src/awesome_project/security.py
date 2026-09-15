@@ -1,21 +1,18 @@
-import os
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .config import settings
 from .database import get_db
 from .models import User
 
 bearer_scheme = HTTPBearer()
-load_dotenv()
 
-SECRET_KEY = os.environ["SECRET_KEY"]
 ALGORITHM = "HS256"
 
 password_hash = PasswordHash.recommended()
@@ -38,7 +35,7 @@ def create_access_token(data: dict) -> str:
     
     return jwt.encode(
         to_encode,
-        SECRET_KEY,
+        settings.secret_key,
         algorithm=ALGORITHM,
     )
 
@@ -49,7 +46,7 @@ def get_current_user(
     try:
         payload = jwt.decode(
             credentials.credentials,
-            SECRET_KEY,
+            settings.secret_key,
             algorithms=[ALGORITHM],
         )
     except jwt.PyJWTError:
