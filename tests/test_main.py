@@ -377,3 +377,130 @@ def test_expenses_reject_token_with_invalid_user_id(unauthenticated_client):
     response = unauthenticated_client.get("/expenses")
 
     assert response.status_code == 401
+
+def test_create_expense_rejects_non_positive_amount(client):
+    response = client.post(
+        "/expenses",
+        json={
+            "title": "Invalid expense",
+            "amount": "0",
+            "category": "Test",
+        },
+    )
+
+    assert response.status_code == 422
+
+def test_create_expense_rejects_missing_fields(client):
+    response = client.post(
+        "/expenses",
+        json={
+            "title": "Incomplete expense",
+        },
+    )
+
+    assert response.status_code == 422
+
+def test_get_expenses_rejects_invalid_pagination(client):
+    response = client.get("/expenses?limit=0")
+    assert response.status_code == 422
+
+    response = client.get("/expenses?limit=101")
+    assert response.status_code == 422
+
+    response = client.get("/expenses?offset=-1")
+    assert response.status_code == 422
+
+def test_patch_expense_updates_only_provided_field(client):
+    create_response = client.post(
+        "/expenses",
+        json={
+            "title": "Original expense",
+            "amount": "500.00",
+            "category": "Food",
+        },
+    )
+
+    assert create_response.status_code == 201
+    expense_id = create_response.json()["id"]
+
+    response = client.patch(
+        f"/expenses/{expense_id}",
+        json={
+            "amount": "750.00",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": expense_id,
+        "title": "Original expense",
+        "amount": "750.00",
+        "category": "Food",
+    }
+
+def test_patch_expense_rejects_empty_update(client):
+    create_response = client.post(
+        "/expenses",
+        json={
+            "title": "Original expense",
+            "amount": "500.00",
+            "category": "Food",
+        },
+    )
+
+    assert create_response.status_code == 201
+    expense_id = create_response.json()["id"]
+
+    response = client.patch(
+        f"/expenses/{expense_id}",
+        json={},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "At least one field must be provided"
+    }
+
+def test_register_login_and_create_expense(client):
+    # Register a new user.
+    register_response = client.post(
+        "/users/register",
+        json={
+            "username": "lifecycle_user",
+            "email": "lifecycle@example.com",
+            "password": "password123",
+        },
+    )
+
+    assert register_response.status_code == 201
+
+    # Log in as the newly registered user.
+    login_response = client.post(
+        "/users/login",
+        json={
+            "username": "lifecycle_user",
+            "password": "password123",
+        },
+    )
+
+    assert login_response.status_code == 200
+
+    access_token = login_response.json()["access_token"]
+
+    # Authenticate as the newly registered user.
+    client.headers["Authorization"] = f"Bearer {access_token}"
+
+    # Create an expense using the authenticated identity.
+    expense_response = client.post(
+        "/expenses",
+        json={
+            "title": "First expense",
+            "amount": "250.00",
+            "category": "Food",
+        },
+    )
+
+    assert expense_response.status_code == 201
+    assert expense_response.json()["title"] == "First expense"
+    assert expense_response.json()["amount"] == "250.00"
+    assert expense_response.json()["category"] == "Food"
