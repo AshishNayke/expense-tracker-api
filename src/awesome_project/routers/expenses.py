@@ -16,7 +16,11 @@ from ..security import get_current_user
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
 
-@router.get("", response_model=list[ExpenseResponse])
+@router.get(
+    "",
+    response_model=list[ExpenseResponse],
+    summary="List the current user's expenses",
+)
 def get_expenses(
     category: str | None = None,
     limit: int = Query(default=20, gt=0, le=100),
@@ -36,7 +40,11 @@ def get_expenses(
     return expenses
 
 
-@router.get("/{expense_id}", response_model=ExpenseResponse)
+@router.get(
+    "/{expense_id}",
+    response_model=ExpenseResponse,
+    summary="Get an expense by ID",
+)
 def get_expense(
     expense_id: int,
     db: Session = Depends(get_db),
@@ -55,9 +63,10 @@ def get_expense(
 
 
 @router.post(
-    "", 
-    response_model=ExpenseResponse, 
+    "",
+    response_model=ExpenseResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create a new expense",
 )
 def create_expense(
     expense: ExpenseCreate,
@@ -83,7 +92,11 @@ def create_expense(
     return new_expense
 
 
-@router.put("/{expense_id}", response_model=ExpenseResponse)
+@router.put(
+    "/{expense_id}",
+    response_model=ExpenseResponse,
+    summary="Replace an expense",
+)
 def update_expense(
     expense_id: int,
     expense: ExpenseUpdate,
@@ -114,7 +127,11 @@ def update_expense(
     return existing_expense
 
 
-@router.patch("/{expense_id}", response_model=ExpenseResponse)
+@router.patch(
+    "/{expense_id}",
+    response_model=ExpenseResponse,
+    summary="Partially update an expense",
+)
 def patch_expense(
     expense_id: int,
     expense: ExpensePatch,
@@ -152,7 +169,9 @@ def patch_expense(
     return existing_expense
 
 
-@router.delete("/{expense_id}", response_model=ExpenseResponse)
+@router.delete(
+    "/{expense_id}", response_model=ExpenseResponse, summary="Delete an expense"
+)
 def delete_expense(
     expense_id: int,
     db: Session = Depends(get_db),

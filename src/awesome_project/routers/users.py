@@ -15,10 +15,12 @@ from ..security import (
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+
 @router.post(
     "/register",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
 )
 def register_user(
     user_data: UserCreate,
@@ -44,7 +46,10 @@ def register_user(
 
     return user
 
-@router.post("/login", response_model=TokenResponse)
+
+@router.post(
+    "/login", response_model=TokenResponse, summary="Log in and obtain an access token"
+)
 def login_user(
     user_data: LoginRequest,
     db: Session = Depends(get_db),
@@ -68,7 +73,10 @@ def login_user(
         "token_type": "bearer",
     }
 
-@router.get("/me", response_model=UserResponse)
+
+@router.get(
+    "/me", response_model=UserResponse, summary="Get the current authenticated user"
+)
 def read_current_user(
     current_user: User = Depends(get_current_user),
 ):
