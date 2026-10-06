@@ -52,7 +52,7 @@ def test_user(db):
 @pytest.fixture
 def auth_headers(test_user):
     access_token = create_access_token(
-        {"sub": str(test_user.id)}
+        {"sub": str(test_user.id), "token_version": test_user.token_version}
     )
 
     return {

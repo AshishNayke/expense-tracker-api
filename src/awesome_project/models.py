@@ -1,6 +1,15 @@
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, Numeric, String
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -19,6 +28,12 @@ class Expense(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
+    expense_date: Mapped[date] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(),
+        nullable=False,
+    )
+
 
     __table_args__ = (
         CheckConstraint(
@@ -27,6 +42,12 @@ class Expense(Base):
         ),
     )
 
+Index(
+    "idx_expenses_user_date",
+    Expense.user_id,
+    Expense.expense_date,
+)
+
 class User(Base):
     __tablename__ = "users"
 
@@ -34,3 +55,8 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_version: Mapped[int] = mapped_column(
+    Integer,
+    nullable=False,
+    server_default="0",
+)

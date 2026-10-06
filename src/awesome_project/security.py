@@ -26,7 +26,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-def create_access_token(data: dict) -> str:
+def create_access_token(data: dict[str, str | int]) :
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
@@ -79,5 +79,17 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+    token_version = payload.get("token_version")
+
+    token_version = payload.get("token_version")
+
+    if (
+        type(token_version) is not int
+        or token_version != user.token_version
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+    )
 
     return user
