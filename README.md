@@ -1,169 +1,211 @@
 # Expense Tracker API
 
-A REST API for managing personal expenses, built with **FastAPI**, **SQLAlchemy**, and **PostgreSQL**.
+A Python backend API for personal expense management, built with FastAPI and PostgreSQL and developed as a practical backend-engineering project. The project started as a simple CRUD API and evolved into a more complete backend system focused on authentication, authorization, database transactions, reporting, testing, performance, and Docker-based deployment.
 
-The project is built as a practical backend-engineering learning project, with database migrations, automated API tests, validation, pagination, filtering, and code-quality tooling.
+## Overview
 
-## Tech Stack
+The goal of this project is to practice backend engineering beyond basic CRUD by designing and implementing realistic API, database, security, testing, and deployment concerns.
 
-* **Python 3.12+**
-* **FastAPI** — REST API framework
-* **Pydantic** — request/response validation
-* **SQLAlchemy 2** — ORM and database interaction
-* **PostgreSQL** — relational database
-* **Alembic** — database migrations
-* **Pytest** — automated testing
-* **Ruff** — linting and formatting
-* **uv** — Python project and dependency management
-* **Uvicorn** — ASGI server
+### Core Stack
+
+* **Python 3.12**
+* **FastAPI**
+* **Pydantic**
+* **PostgreSQL 16**
+* **SQLAlchemy**
+* **Alembic**
+* **PyJWT**
+* **Pytest**
+* **Ruff**
+* **Docker / Docker Compose**
+* **uv**
 
 ## Features
 
-* Create, read, update, partially update, and delete expenses
-* Input validation with Pydantic
-* Database-level validation with PostgreSQL constraints
-* Category filtering
-* Amount-based descending ordering
-* Pagination with `limit` and `offset`
-* PostgreSQL database integration
-* Alembic database migrations
-* Automated API tests with an isolated test database
-* Ruff linting and formatting
+### Expense Management
+
+* Create, read, update, and delete expenses
+* Partial expense updates
+* Pagination and filtering
+* Expense ownership and user isolation
+* Positive-amount validation
+* Expense dates
+
+### Authentication & Security
+
+* User registration and login
+* Password hashing
+* JWT-based authentication
+* Bearer-token authorization
+* User-level resource ownership
+* Password change
+* JWT token-version based revocation after password changes
+* Expiring access tokens
+
+### Reporting
+
+* Expense summaries
+* Date-range reports
+* Category-based reports
+* Daily reports
+* Monthly reports grouped by category or day
+
+### Transaction Handling
+
+* Bulk expense creation
+* Atomic database operations
+* Explicit rollback handling
+* Database constraint handling
+* Transaction-focused integration tests
+
+### Database & Performance
+
+* PostgreSQL relational schema
+* Foreign keys and unique constraints
+* Database `CHECK` constraints
+* Alembic migrations
+* Composite indexing
+* Query execution-plan analysis
+* Performance measurement and profiling
+* Optimization based on measured query behavior
+
+### Reliability & Observability
+
+* Centralized application configuration
+* Environment-based settings
+* Application logging
+* Database health/readiness check
+* Graceful application startup/shutdown logging
+* Safe handling of unexpected database errors
+
+### Testing
+
+The project includes automated API and database integration tests covering:
+
+* Authentication
+* Authorization and user isolation
+* Request validation
+* CRUD behavior
+* Reporting
+* Pagination
+* Date boundaries
+* Empty-result behavior
+* Bulk transactions
+* Database rollback
+* Password changes
+* JWT token revocation
+
+## Architecture
+
+The current application follows a simple layered structure:
+
+```text
+Client
+  ↓
+FastAPI Routers
+  ↓
+Pydantic Validation
+  ↓
+Authentication / Authorization
+  ↓
+SQLAlchemy Session
+  ↓
+PostgreSQL
+```
+
+Supporting components include:
+
+```text
+Alembic      → Database schema migrations
+Pytest       → Automated testing
+Ruff         → Linting and code quality
+Docker       → Reproducible runtime environment
+```
 
 ## Project Structure
 
 ```text
 awesome-project/
 ├── alembic/
-│   ├── versions/
-│   ├── env.py
-│   └── ...
+│   └── versions/
 ├── src/
 │   └── awesome_project/
 │       ├── main.py
+│       ├── config.py
 │       ├── database.py
+│       ├── logging_config.py
 │       ├── models.py
 │       ├── schemas.py
+│       ├── security.py
 │       └── routers/
-│           └── expenses.py
+│           ├── expenses.py
+│           ├── users.py
+│           └── health.py
 ├── tests/
 │   ├── conftest.py
 │   └── test_main.py
-├── .env
+├── Dockerfile
+├── compose.yaml
 ├── pyproject.toml
-├── uv.lock
-└── README.md
+└── uv.lock
 ```
 
-### Architecture
+## Compact API Overview
 
-```text
-Client
-  ↓
-FastAPI
-  ↓
-Pydantic schemas
-  ↓
-SQLAlchemy Session
-  ↓
-SQLAlchemy ORM
-  ↓
-PostgreSQL
-```
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/expenses` | List current user's expenses |
+| POST | `/expenses` | Create expense |
+| PATCH | `/expenses/{id}` | Partial update |
+| GET | `/expenses/report/monthly` | Monthly report |
+| POST | `/expenses/bulk` | Atomic bulk creation |
+| POST | `/users/register` | Register |
+| POST | `/users/login` | Login |
+| POST | `/users/change-password` | Change password / revoke old tokens |
+| GET | `/health` | Database readiness check |
 
-Alembic manages database schema changes, while Pytest verifies API behavior.
+## Running Locally
 
-## Requirements
-
-* Python 3.12+
-* PostgreSQL
-* `uv`
-
-## Setup
-
-Clone the repository and enter the project directory:
-
-```bash
-git clone <repository-url>
-cd awesome-project
-```
-
-Install the project dependencies:
+### 1. Install dependencies
 
 ```bash
 uv sync
 ```
 
-Create a `.env` file in the project root:
+### 2. Configure environment variables
 
-```env
-DATABASE_URL=postgresql+psycopg://expense_user:<password>@localhost:5432/expense_tracker
-TEST_DATABASE_URL=postgresql+psycopg://expense_user:<password>@localhost:5432/expense_tracker_test
+Create a `.env` file containing the required application settings:
+
+```text
+DATABASE_URL=...
+TEST_DATABASE_URL=...
+SECRET_KEY=...
+APP_ENV=development
 ```
 
-Replace the credentials with your local PostgreSQL configuration.
-
-## Database Setup
-
-Apply the existing Alembic migrations:
+### 3. Apply database migrations
 
 ```bash
 uv run alembic upgrade head
 ```
 
-To check the current migration:
-
-```bash
-uv run alembic current
-```
-
-## Running the API
-
-Start the development server:
+### 4. Start the API
 
 ```bash
 uv run uvicorn awesome_project.main:app --reload
 ```
 
-The API will be available at:
-
-```text
-http://127.0.0.1:8000
-```
-
-Interactive API documentation is available at:
+The development API documentation is available at:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-## API Endpoints
-
-| Method | Endpoint                 | Description                 |
-| ------ | ------------------------ | --------------------------- |
-| GET    | `/`                      | API status                  |
-| GET    | `/expenses`              | List expenses               |
-| GET    | `/expenses/{expense_id}` | Get a single expense        |
-| POST   | `/expenses`              | Create an expense           |
-| PUT    | `/expenses/{expense_id}` | Replace an expense          |
-| PATCH  | `/expenses/{expense_id}` | Partially update an expense |
-| DELETE | `/expenses/{expense_id}` | Delete an expense           |
-
-### Filtering and Pagination
-
-Expenses can be filtered by category:
+Health check:
 
 ```text
-GET /expenses?category=Food
+http://127.0.0.1:8000/health
 ```
-
-Pagination is supported through `limit` and `offset`:
-
-```text
-GET /expenses?limit=10&offset=20
-```
-
-Results are ordered by amount in descending order.
 
 ## Running Tests
 
@@ -173,37 +215,68 @@ Run the complete test suite:
 uv run pytest
 ```
 
-The tests use a separate PostgreSQL test database and isolate each test using transaction rollback.
-
-## Code Quality
-
-Run Ruff's linter:
+Run Ruff:
 
 ```bash
 uv run ruff check .
 ```
 
-Format the project:
+## Running with Docker
+
+The project includes a Docker Compose environment containing:
+
+* FastAPI application
+* PostgreSQL database
+* Persistent PostgreSQL volume
+* PostgreSQL health check
+* API dependency on database health
+
+Build and start the environment:
 
 ```bash
-uv run ruff format .
+docker compose build
+docker compose up -d
 ```
 
-## Development Philosophy
+Check container status:
 
-This project focuses on learning practical backend engineering concepts rather than adding architecture for its own sake.
+```bash
+docker compose ps
+```
 
-The current structure separates:
+Check API health:
 
-* HTTP routing
-* API schemas
-* Database models
-* Database/session configuration
-* Database migrations
-* Automated tests
+```bash
+curl http://127.0.0.1:8000/health
+```
 
-Additional architectural layers such as repositories or service modules can be introduced when the project's complexity actually justifies them.
+The Docker PostgreSQL service is exposed on port `5433` on the host.
 
-## License
+Database migrations are managed separately through Alembic.
 
-This project is currently for learning and development purposes.
+## Engineering Focus
+
+This project is intentionally focused on learning and demonstrating practical backend engineering concepts rather than simply implementing CRUD endpoints.
+
+Key areas explored include:
+
+```text
+API design
+HTTP semantics
+Authentication and authorization
+Database modeling
+Transactions and rollback
+Schema migrations
+Query optimization
+Automated testing
+Logging and health checks
+Containerization
+```
+
+## Current Status
+
+The backend is actively being developed.
+
+The current implementation provides a functional expense-management API with authentication, reporting, transactional operations, automated testing, performance work, and Docker support.
+
+Further development will focus on additional backend engineering challenges, production hardening, and continued improvement of the application's architecture and reliability.
