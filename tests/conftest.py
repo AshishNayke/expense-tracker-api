@@ -1,9 +1,11 @@
 import os
+from unittest.mock import MagicMock
 
 import pytest
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from awesome_project.database import get_db
@@ -34,6 +36,15 @@ def db():
             session.close()
             transaction.rollback()
 
+@pytest.fixture
+def broken_db():
+    mock_session = MagicMock()
+    mock_session.execute.side_effect = SQLAlchemyError("Database is down")
+
+    try:
+        yield mock_session
+    finally:
+        pass
 
 @pytest.fixture
 def test_user(db):
@@ -45,6 +56,7 @@ def test_user(db):
 
     db.add(user)
     db.flush()
+    db.commit()
 
     return user
 

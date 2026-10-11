@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -44,7 +44,7 @@ def get_expenses(
     if category is not None:
         stmt = stmt.where(Expense.category == category)
 
-    stmt = stmt.order_by(Expense.amount.desc())
+    stmt = stmt.order_by(Expense.amount.desc(), Expense.id.asc())
     stmt = stmt.limit(limit).offset(offset)
 
     expenses = db.scalars(stmt).all()
@@ -194,6 +194,12 @@ def get_monthly_expense_report(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if year == 9999 and month == 12:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Reports for december 9999 are not supported due to year range limits.",
+)
+
     start_date=date(year,month,1)
 
     next_month= month + 1
@@ -203,8 +209,10 @@ def get_monthly_expense_report(
         next_month=1
         next_year = year+1
     end_date=date(next_year,next_month,1)
+
     group_total = func.sum(Expense.amount).label("total")
     grouping_column = Expense.expense_date if daily is True else Expense.category
+
     stmt = (
         select(
             grouping_column,
@@ -215,8 +223,8 @@ def get_monthly_expense_report(
             Expense.expense_date >= start_date,
             Expense.expense_date < end_date,
         )
-    .group_by(grouping_column)
-    .order_by(grouping_column)
+        .group_by(grouping_column)
+        .order_by(grouping_column)
     )
     rows = db.execute(stmt).all()
     category_result=[]
@@ -290,11 +298,13 @@ def create_expense(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    user_id = current_user.id
+
     new_expense = Expense(
         title=expense.title,
         amount=expense.amount,
         category=expense.category,
-        user_id=current_user.id,
+        user_id=user_id,
         expense_date=expense.expense_date
     )
 
@@ -302,10 +312,16 @@ def create_expense(
 
     try:
         db.commit()
-    except IntegrityError:
-        logger.exception("Database operation failed while creating expense")
+    except SQLAlchemyError:
         db.rollback()
-        raise
+        logger.exception(
+            "Database error creating expense for user %s",
+            user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
     db.refresh(new_expense)
     return new_expense
@@ -327,6 +343,8 @@ def create_expense_bulk(
             detail="At least one expense is required"
         )
 
+    user_id = current_user.id
+
     new_expenses = []
     for expense in expenses:
         new_expenses.append(
@@ -338,17 +356,25 @@ def create_expense_bulk(
             expense_date=expense.expense_date
         )
     )
+
     try:
         db.add_all(new_expenses)
         db.flush()
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        logger.exception("Failed to create bulk expenses")
+        logger.exception(
+            "Failed to create %s bulk expenses for user %s",
+            len(expenses),
+            user_id,
+        )
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
         )
+
+    for expense in new_expenses:
+        db.refresh(expense)
 
     return new_expenses
 
@@ -364,9 +390,11 @@ def update_expense(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    user_id = current_user.id
+
     stmt = select(Expense).where(
         Expense.id == expense_id,
-        Expense.user_id == current_user.id,
+        Expense.user_id == user_id,
     )
     existing_expense = db.scalar(stmt)
 
@@ -380,9 +408,17 @@ def update_expense(
 
     try:
         db.commit()
-    except IntegrityError:
+    except SQLAlchemyError:
         db.rollback()
-        raise
+        logger.exception(
+            "Database error updating expense %s for user %s",
+            expense_id,
+            user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
     db.refresh(existing_expense)
 
@@ -400,9 +436,11 @@ def patch_expense(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    user_id = current_user.id
+
     stmt = select(Expense).where(
         Expense.id == expense_id,
-        Expense.user_id == current_user.id,
+        Expense.user_id == user_id,
     )
     existing_expense = db.scalar(stmt)
 
@@ -422,9 +460,17 @@ def patch_expense(
 
     try:
         db.commit()
-    except IntegrityError:
+    except SQLAlchemyError:
         db.rollback()
-        raise
+        logger.exception(
+            "Database error patching expense %s for user %s",
+            expense_id,
+            user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
     db.refresh(existing_expense)
 
@@ -432,7 +478,8 @@ def patch_expense(
 
 
 @router.delete(
-    "/{expense_id}", response_model=ExpenseResponse,
+    "/{expense_id}",
+    response_model=ExpenseResponse,
     summary="Delete an Expense",
 )
 def delete_expense(
@@ -440,19 +487,33 @@ def delete_expense(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    user_id = current_user.id
+
     stmt = select(Expense).where(
         Expense.id == expense_id,
-        Expense.user_id == current_user.id,
+        Expense.user_id == user_id,
     )
     expense = db.scalar(stmt)
 
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
 
+    # This copies the values into safe, pure Python memory.
+    response_data = ExpenseResponse.model_validate(expense)
+
     db.delete(expense)
     try:
         db.commit()
-    except IntegrityError:
+    except SQLAlchemyError:
         db.rollback()
+        logger.exception(
+            "Failed to delete expense %s for user %s",
+            expense_id,
+            user_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete expense",
+        )
 
-    return expense
+    return response_data

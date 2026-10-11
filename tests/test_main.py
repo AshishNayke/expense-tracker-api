@@ -1,4 +1,5 @@
 from datetime import date
+from unittest.mock import patch
 
 import jwt
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -1646,3 +1647,240 @@ def test_password_change_rolls_back_on_database_error(
 
     assert test_user.hashed_password == hashed_password
     assert test_user.token_version == token_version
+
+
+def test_delete_expense_database_error(
+    client,
+    db,
+
+):
+    response=client.post(
+        "/expenses",
+        json={
+            "title": "Breakfast",
+            "amount": "200.00",
+            "category": "Food",
+            "expense_date": "2026-12-01",
+        },
+    )
+    assert response.status_code == 201
+
+    expense_id = response.json()["id"]
+
+    with patch.object(db, "commit", side_effect=SQLAlchemyError("boom")):
+        response = client.delete(f"/expenses/{expense_id}")
+
+    assert response.status_code == 500
+
+    response=client.get(f"/expenses/{expense_id}")
+    assert response.status_code == 200
+
+def test_patch_expense_rejects_null(
+    client,
+    db
+):
+    response = client.post("/expenses", json={
+        "title": "Breakfast",
+        "amount": "200.00",
+        "category": "Food",
+        "expense_date": "2026-12-01",
+    })
+    assert response.status_code == 201
+    expense_id = response.json()["id"]
+
+    response = client.patch(
+        f"/expenses/{expense_id}",
+        json={"title": None},
+    )
+    assert response.status_code == 422
+
+    response = client.patch(
+        f"/expenses/{expense_id}",
+        json={"title": "Breakfast","amount": "200.00","category":None},
+    )
+    assert response.status_code == 422
+
+    response = client.patch(
+        f"/expenses/{expense_id}",
+        json={"title": None,"amount": None,"category": None,"expense_date": None},
+    )
+    assert response.status_code == 422
+
+    response = client.patch(
+        f"/expenses/{expense_id}",
+        json={"title": "Breakfast","amount": "200.00","category": "Food","expense_date": None},
+    )
+    assert response.status_code == 422
+
+def test_create_expense_database_error(
+    client,
+    db,
+    auth_headers
+):
+    with patch.object(db, "commit", side_effect=SQLAlchemyError("boom")):
+        response = client.post(
+            "/expenses",
+            json={
+                "title": "Breakfast",
+                "amount": "200.00",
+                "category": "Food",
+                "expense_date": "2026-12-01",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 500
+
+    response = client.get("/expenses", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+def test_update_expense_database_error(
+    client,
+    db,
+    auth_headers
+):
+    response = client.post(
+        "/expenses",
+        json={
+            "title": "Breakfast",
+            "amount": "200.00",
+            "category": "Food",
+            "expense_date": "2026-12-01",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+
+    expense_id = response.json()["id"]
+
+    with patch.object(db, "commit", side_effect=SQLAlchemyError("boom")):
+        response = client.put(
+            f"/expenses/{expense_id}",
+            json={
+                "title": "Untitled",
+                "amount": "2000.00",
+                "category": "Food",
+                "expense_date": "2026-12-01",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["title"] == "Breakfast"
+
+def test_patch_expense_database_error(
+    client,
+    db,
+    auth_headers
+):
+    response = client.post(
+        "/expenses",
+        json={
+            "title": "Breakfast",
+            "amount": "200.00",
+            "category": "Food",
+            "expense_date": "2026-12-01",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+
+    expense_id = response.json()["id"]
+
+    with patch.object(db, "commit", side_effect=SQLAlchemyError("boom")):
+        response = client.patch(
+            f"/expenses/{expense_id}",
+            json={
+                "title": "Dinner",
+                "amount": "2000.00",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+
+    response = client.get(f"/expenses/{expense_id}", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["title"] == "Breakfast"
+
+def test_create_expense_bulk_database_error(
+    client,
+    db,
+    auth_headers
+):
+    with patch.object(db, "commit", side_effect=SQLAlchemyError("boom")):
+        response = client.post(
+            "/expenses/bulk",
+            json=[
+                {
+                    "title": "Bulk Breakfast",
+                    "amount": "100.00",
+                    "category": "Food",
+                    "expense_date": "2026-12-01",
+                },
+                {
+                    "title": "Bulk Lunch",
+                    "amount": "250.00",
+                    "category": "Food",
+                    "expense_date": "2026-12-01",
+                },
+            ],
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+
+    response = client.get("/expenses", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+def test_monthly_expense_report_december_9999_edge_case(
+    client,
+    auth_headers
+):
+    response = client.get(
+        "/expenses/report/monthly",
+        params={"year": 9999, "month": 12},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "december 9999" in response.json()["detail"].lower()
+
+def test_get_expenses_deterministic_pagination(client, auth_headers):
+    created_ids = []
+    for i in range(3):
+        response = client.post(
+            "/expenses",
+            json={
+                "title": f"Expense {i + 1}",
+                "amount": "150.00",
+                "category": "Food",
+                "expense_date": "2026-12-01",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 201
+        created_ids.append(response.json()["id"])
+
+    response = client.get("/expenses?limit=2&offset=0", headers=auth_headers)
+    assert response.status_code == 200
+    page_1 = response.json()
+    assert len(page_1) == 2
+
+    response = client.get("/expenses?limit=2&offset=2", headers=auth_headers)
+    assert response.status_code == 200
+    page_2 = response.json()
+    assert len(page_2) == 1
+
+    all_returned_ids = [e["id"] for e in (page_1 + page_2)]
+
+    relevant_ids = [eid for eid in all_returned_ids if eid in created_ids]
+
+    assert relevant_ids == sorted(relevant_ids)

@@ -5,6 +5,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from awesome_project.schemas import HealthResponse
+
 from ..database import get_db
 
 logger = logging.getLogger(__name__)
@@ -12,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/health", tags=["health"])
 
 
-@router.get("")
+@router.get("",response_model=HealthResponse,)
 def health_check(
     db: Session = Depends(get_db),
 ):

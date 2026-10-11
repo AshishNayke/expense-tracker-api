@@ -4,6 +4,9 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 
+class HealthResponse(BaseModel):
+    status: str
+
 class ExpenseCreate(BaseModel):
     title: str = Field(min_length=1,max_length=255)
     amount: Decimal = Field(gt=0)
@@ -50,10 +53,10 @@ class ExpenseUpdate(BaseModel):
 
 
 class ExpensePatch(BaseModel):
-    title: str | None = Field(default=None, max_length=255)
-    amount: Decimal | None = Field(default=None, gt=0)
-    category: str | None = Field(default=None, max_length=255)
-    expense_date: date | None = None
+    title: str = Field(default=None, max_length=255)
+    amount: Decimal = Field(default=None, gt=0)
+    category: str = Field(default=None, max_length=255)
+    expense_date: date = None
 
 
 class UserCreate(BaseModel):
@@ -78,6 +81,9 @@ class LoginRequest(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=8)
     new_password: str = Field(min_length=8)
+
+class PasswordChangeResponse(BaseModel):
+    message: str
 
 class TokenResponse(BaseModel):
     access_token: str

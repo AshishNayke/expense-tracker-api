@@ -10,6 +10,7 @@ from ..models import User
 from ..schemas import (
     LoginRequest,
     PasswordChange,
+    PasswordChangeResponse,
     TokenResponse,
     UserCreate,
     UserResponse,
@@ -98,6 +99,7 @@ def login_user(
 
 @router.post(
     "/change-password",
+    response_model=PasswordChangeResponse,
     summary="Change user's password",
 )
 def change_current_user_password(
@@ -105,13 +107,14 @@ def change_current_user_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    username=current_user.username
     if not verify_password(
         user_data.current_password,
         current_user.hashed_password,
     ):
         logger.warning(
             "Failed password change attempt: username=%s",
-            current_user.username,
+            username,
         )
 
         raise HTTPException(
@@ -131,9 +134,9 @@ def change_current_user_password(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        logger.exception("Failed to change password for user=%s", current_user.username)
+        logger.exception("Failed to change password for user=%s",username)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
-    logger.info("Password changed for user=%s", current_user.username)
+    logger.info("Password changed for user=%s",username)
     return {"message":"Password changed successfully!"}
 
 @router.get(
