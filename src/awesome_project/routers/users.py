@@ -37,8 +37,10 @@ def register_user(
     user_data: UserCreate,
     db: Session = Depends(get_db),
 ):
+    username = user_data.username
+
     user = User(
-        username=user_data.username,
+        username=username,
         email=user_data.email,
         hashed_password=hash_password(user_data.password),
     )
@@ -53,6 +55,13 @@ def register_user(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username or email already exists",
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Database error during registration for username=%s", username)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
         )
 
     return user

@@ -1,13 +1,19 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
 import jwt
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from awesome_project.config import settings
-from awesome_project.models import Expense
+from awesome_project.config import Settings, settings
+from awesome_project.models import Expense, User
 from awesome_project.schemas import PasswordChange
-from awesome_project.security import ALGORITHM, create_access_token, hash_password
+from awesome_project.security import (
+    ALGORITHM,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 
 
 def test_root(client):
@@ -1537,7 +1543,7 @@ def test_login_success(client):
     # ---- JWT verification ---------------------------------------------
     decoded = jwt.decode(
         payload["access_token"],
-        settings.secret_key,
+        settings.secret_key.get_secret_value(),
         algorithms=[ALGORITHM],
     )
     assert decoded["token_version"] == 0
@@ -1648,6 +1654,24 @@ def test_password_change_rolls_back_on_database_error(
     assert test_user.hashed_password == hashed_password
     assert test_user.token_version == token_version
 
+def test_password_hashing_at_rest(client,db):
+    password="plain-text-password"
+    response=client.post(
+        "/users/register",
+        json={
+            "username":"testuser",
+            "email": "testuser@testuser.com",
+            "password":password,
+        }
+    )
+    assert response.status_code == 201
+
+    user_record=db.query(User).filter(User.username == "testuser").first()
+    assert user_record is not None
+
+    assert user_record.hashed_password != password
+
+    assert verify_password(password, user_record.hashed_password) is True
 
 def test_delete_expense_database_error(
     client,
@@ -1884,3 +1908,76 @@ def test_get_expenses_deterministic_pagination(client, auth_headers):
     relevant_ids = [eid for eid in all_returned_ids if eid in created_ids]
 
     assert relevant_ids == sorted(relevant_ids)
+
+def test_token_missing_exp_claim(
+    client,
+    test_user,
+    auth_headers
+):
+    # sub and token_version but no exp
+    bad_payload = {
+        "sub": str(test_user.id),
+        "token_version": test_user.token_version,
+    }
+    bad_token = jwt.encode(bad_payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
+
+    # Attempt to access a protected endpoint using the bad token
+    response = client.get(
+        "/expenses/me",
+        headers={"Authorization": f"Bearer {bad_token}"},
+    )
+
+    assert response.status_code == 401
+
+def test_expired_token(
+    client,
+    test_user
+):
+    #Ensure a correctly signed token with a past expiration timestamp is rejected with 401
+    payload = {
+        "sub": str(test_user.id),
+        "token_version": test_user.token_version,
+        "exp": datetime.now(UTC) - timedelta(hours=1),
+    }
+    #and this is the under lieing way to
+    token = jwt.encode(payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
+
+    response = client.get(
+        "/expenses",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 401
+
+
+def test_tampered_signature(
+    client,
+    test_user
+):
+    #Ensure a token with a modified signature fails signature verification with 401
+    # creating token using helper function we created
+    token = create_access_token(
+        {"sub": str(test_user.id), "token_version": test_user.token_version}
+    )
+
+    # Tamper with the signature component (the third part after the second dot)
+    parts = token.split(".")
+    parts[2] = parts[2][:-4] + "XXXX"
+    tampered_token = ".".join(parts)
+
+    response = client.get(
+        "/expenses",
+        headers={"Authorization": f"Bearer {tampered_token}"}
+    )
+    assert response.status_code == 401
+
+def test_settings_rejects_short_secret():
+    try:
+        Settings(secret_key="too_short_secret_string_less_than_sixty_four_chars")
+        assert False, "Expected ValidationError was not raised"
+    except ValidationError:
+        pass
+
+def test_settings_masks_secret_key():
+    valid_secret = "a" * 64
+    settings = Settings(secret_key=valid_secret)
+    assert valid_secret not in str(settings.secret_key)

@@ -35,7 +35,7 @@ def create_access_token(data: dict[str, str | int]) :
     
     return jwt.encode(
         to_encode,
-        settings.secret_key,
+        settings.secret_key.get_secret_value(),
         algorithm=ALGORITHM,
     )
 
@@ -46,8 +46,9 @@ def get_current_user(
     try:
         payload = jwt.decode(
             credentials.credentials,
-            settings.secret_key,
+            settings.secret_key.get_secret_value(),
             algorithms=[ALGORITHM],
+            options={"require": ["exp", "sub", "token_version"]},
         )
     except jwt.PyJWTError:
         raise HTTPException(
@@ -56,12 +57,6 @@ def get_current_user(
         )
 
     user_id = payload.get("sub")
-
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
 
     try:
         user_id = int(user_id)
@@ -79,8 +74,6 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    token_version = payload.get("token_version")
-
     token_version = payload.get("token_version")
 
     if (
