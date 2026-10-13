@@ -1981,3 +1981,24 @@ def test_settings_masks_secret_key():
     valid_secret = "a" * 64
     settings = Settings(secret_key=valid_secret)
     assert valid_secret not in str(settings.secret_key)
+
+
+def test_login_rate_limit(client):
+    login_data = {
+        "username": "unknown_user",
+        "password": "wrongpassword123",
+    }
+
+    # The first five requests reach the login handler.
+    for _ in range(5):
+        response = client.post("/users/login", json=login_data)
+        assert response.status_code == 401
+
+    # The sixth request exceeds the limit.
+    response = client.post("/users/login", json=login_data)
+    assert response.status_code == 429
+
+    # Verify the Retry-After header exists and is a positive integer
+    retry_after = response.headers.get("Retry-After")
+    assert retry_after is not None, "Retry-After header is missing"
+    assert int(retry_after) > 0, "Retry-After value must be a positive integer"

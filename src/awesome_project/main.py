@@ -2,9 +2,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from .config import settings
 from .logging_config import configure_logging
+from .rate_limiting import limiter
 from .routers.expenses import router as expenses_router
 from .routers.health import router as health_router
 from .routers.users import router as users_router
@@ -29,6 +32,12 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.app_env == "development" else None,
     redoc_url="/redoc" if settings.app_env == "development" else None,
+)
+
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler,
 )
 
 @app.get("/")

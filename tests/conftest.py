@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from awesome_project.database import get_db
 from awesome_project.main import app
 from awesome_project.models import User
+from awesome_project.rate_limiting import limiter
 from awesome_project.security import create_access_token, hash_password
 
 load_dotenv()
@@ -19,6 +20,11 @@ TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 
 test_engine = create_engine(TEST_DATABASE_URL)
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    limiter.reset()
+    yield
+    limiter.reset()
 
 @pytest.fixture
 def db():

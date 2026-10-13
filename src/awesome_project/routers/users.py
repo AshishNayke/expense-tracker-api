@@ -1,12 +1,13 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
+from ..rate_limiting import limiter
 from ..schemas import (
     LoginRequest,
     PasswordChange,
@@ -70,7 +71,10 @@ def register_user(
 @router.post(
     "/login", response_model=TokenResponse, summary="Log in and obtain an access token"
 )
+@limiter.limit("5/minute")
 def login_user(
+    request: Request,
+    response: Response,
     user_data: LoginRequest,
     db: Session = Depends(get_db),
 ):
