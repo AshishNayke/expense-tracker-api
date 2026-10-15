@@ -209,17 +209,53 @@ The API also provides expense summary and reporting endpoints covering:
 * Monthly reporting
 * Optional daily/monthly views
 
-For example:
+Examples:
 
 ```text
+GET /expenses/summary
+GET /expenses/report/categories
+GET /expenses/report/daily?from_date=2026-09-01&to_date=2026-09-30
 GET /expenses/report/monthly?year=2026&month=9
-```
-
-and:
-
-```text
 GET /expenses/report/monthly?year=2026&month=9&daily=true
 ```
+
+Reporting endpoints require authentication. Date-range parameters use ISO dates (`YYYY-MM-DD`).
+
+## Quick API Example
+
+Start the API, then register a user. Use your own email and a password of at least eight characters:
+
+```bash
+curl -X POST http://127.0.0.1:8000/users/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"demo_user","email":"demo@example.com","password":"change-this-password"}'
+```
+
+Log in to receive a bearer token:
+
+```bash
+curl -X POST http://127.0.0.1:8000/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"demo_user","password":"change-this-password"}'
+```
+
+Copy the returned `access_token` value into the next request:
+
+```bash
+curl http://127.0.0.1:8000/expenses \
+  -H "Authorization: Bearer <access-token>"
+```
+
+Create an expense using the same authorization header:
+
+```bash
+curl -X POST http://127.0.0.1:8000/expenses \
+  -H "Authorization: Bearer <access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Groceries","amount":"450.00","category":"Food","expense_date":"2026-09-30"}'
+```
+
+The API returns an expense object that includes its `id` and `version`. These examples create a real user and data in the configured database; use a development database, not production credentials.
 
 ## Authentication
 
@@ -256,6 +292,24 @@ token_version incremented
 
 Previously issued tokens therefore become invalid even if their normal JWT expiration time has not yet been reached.
 
+## Concurrent Updates
+
+Each expense response includes a `version` number. When updating an expense with `PUT` or `PATCH`, send the version you last retrieved as `expected_version`. If another request has changed that expense in the meantime, the API responds with `409 Conflict` rather than silently overwriting the newer data.
+
+For example, an update body can include:
+
+```json
+{
+  "title": "Groceries",
+  "amount": "475.00",
+  "category": "Food",
+  "expense_date": "2026-09-30",
+  "expected_version": 1
+}
+```
+
+Use the current version returned by the API; `1` above is illustrative. After a `409 Conflict`, fetch the latest expense, reconcile the changes, and retry with its current version.
+
 ## Database & Migrations
 
 The project uses PostgreSQL with SQLAlchemy 2 for database interaction and Alembic for schema migrations.
@@ -291,8 +345,8 @@ Database constraints and indexes are maintained through the schema/migration wor
 Clone the repository:
 
 ```bash
-git clone <repository-url>
-cd awesome-project
+git clone https://github.com/AshishNayke/expense-tracker-api.git
+cd expense-tracker-api
 ```
 
 Install dependencies:
@@ -301,19 +355,29 @@ Install dependencies:
 uv sync
 ```
 
-Create a `.env` file in the project root:
+Ensure your local PostgreSQL server is running and that the `expense_tracker` and `expense_tracker_test` databases exist, with a role that can connect to and modify them.
+
+Create a `.env` file in the project root. Replace the example password and secret with your own values; the secret key must be at least 64 characters long.
 
 ```env
-DATABASE_URL=postgresql+psycopg://expense_user:<password>@localhost:5432/expense_tracker
-TEST_DATABASE_URL=postgresql+psycopg://expense_user:<password>@localhost:5432/expense_tracker_test
-SECRET_KEY=<your-secret-key>
+DATABASE_URL=postgresql+psycopg://expense_user:<URL-encoded-password>@localhost:5432/expense_tracker
+TEST_DATABASE_URL=postgresql+psycopg://expense_user:<URL-encoded-password>@localhost:5432/expense_tracker_test
+SECRET_KEY=<a-random-secret-at-least-64-characters-long>
 APP_ENV=development
 ```
 
-Apply migrations:
+The database URLs must match your local PostgreSQL role, password, and database names. URL-encode special characters in the password when placing it in a connection URL. Keep `.env` out of version control.
+
+Apply the schema migrations to the development database:
 
 ```bash
 uv run alembic upgrade head
+```
+
+Apply migrations to the test database when preparing it independently:
+
+```bash
+uv run alembic -x test=true upgrade head
 ```
 
 Start the development server:
@@ -371,6 +435,36 @@ Expected response:
 The Compose PostgreSQL service is published on port `5433` on the host to avoid conflicting with a locally installed PostgreSQL instance.
 
 Database migrations are applied separately from the Docker image build; rebuilding the application image does not automatically change the database schema.
+
+### Apply migrations to the Docker database
+
+The API container image intentionally excludes development dependencies and the Alembic migration directory, so run migrations from your host while the Compose database is running. The host port is `5433`; inside Docker, the database is reachable as `db:5432`.
+
+The `.env.docker` file already contains the Docker database URL. The following command reads that URL and changes only its host and port for a host-side migration. It does not print the URL or require you to copy the password into the command:
+
+```bash
+DATABASE_URL="$(uv run python -c 'from dotenv import dotenv_values; from sqlalchemy.engine import make_url; print(make_url(dotenv_values(".env.docker")["DATABASE_URL"]).set(host="127.0.0.1", port=5433).render_as_string(hide_password=False))')" uv run alembic upgrade head
+```
+
+Verify the revision applied to the Docker database:
+
+```bash
+DATABASE_URL="$(uv run python -c 'from dotenv import dotenv_values; from sqlalchemy.engine import make_url; print(make_url(dotenv_values(".env.docker")["DATABASE_URL"]).set(host="127.0.0.1", port=5433).render_as_string(hide_password=False))')" uv run alembic current
+```
+
+Run these commands from the project root after `docker compose up -d --build`. They require the host development dependencies installed by `uv sync` and the database credentials configured in `.env.docker`.
+
+## Continuous Integration
+
+GitHub Actions runs the backend quality checks on pushes to `main` and pull requests targeting `main`. The workflow starts a PostgreSQL 16 service, installs the project with development dependencies, applies migrations, runs Ruff, and executes the pytest suite.
+
+You can run the same core checks locally:
+
+```bash
+uv run alembic -x test=true upgrade head
+uv run ruff check .
+uv run pytest -q
+```
 
 ## Testing
 
