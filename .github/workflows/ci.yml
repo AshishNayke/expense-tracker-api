@@ -32,7 +32,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://expense_user:ci_test_password@localhost:5432/expense_tracker_test
       TEST_DATABASE_URL: postgresql+psycopg://expense_user:ci_test_password@localhost:5432/expense_tracker_test
-      SECRET_KEY: "ci-only-not-for-production-0123456789abcdef0123456789abcdef"
+      SECRET_KEY: "ci-only-not-for-production-0123456789abcdef0123456789abcdefh52t5jh2tbg87v845gbjv87gu5bfgdfg87r332vhgvsd9rg35ggn323345h4d89b8th"
 
     steps:
       - name: Check out repository
