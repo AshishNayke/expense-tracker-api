@@ -16,10 +16,9 @@ load_dotenv()
 database_url = os.environ["DATABASE_URL"]
 
 if context.get_x_argument(as_dictionary=True).get("test") == "true":
-    database_url = database_url.replace(
-        "expense_tracker",
-        "expense_tracker_test",
-    )
+    database_url = os.environ["TEST_DATABASE_URL"]
+else:
+    database_url = os.environ["DATABASE_URL"]
 
 config.set_main_option("sqlalchemy.url", database_url)
 # Interpret the config file for Python logging.
