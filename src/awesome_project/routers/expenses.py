@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from ..database import get_db
 from ..models import Expense, User
@@ -401,6 +402,12 @@ def update_expense(
     if existing_expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
 
+    if expense.expected_version != existing_expense.version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Expense was modified by another request. Fetch the latest version and retry.",
+        )
+
     existing_expense.title = expense.title
     existing_expense.amount = expense.amount
     existing_expense.category = expense.category
@@ -408,6 +415,12 @@ def update_expense(
 
     try:
         db.commit()
+    except StaleDataError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Expense was modified by another request. Fetch the latest version and retry.",
+        )
     except SQLAlchemyError:
         db.rollback()
         logger.exception(
@@ -447,7 +460,16 @@ def patch_expense(
     if existing_expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
 
-    updates = expense.model_dump(exclude_unset=True)
+    if expense.expected_version != existing_expense.version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Expense was modified by another request. Fetch the latest version and retry."
+        )
+
+    updates = expense.model_dump(
+        exclude_unset=True,
+        exclude={"expected_version"},
+    )
 
     if not updates:
         raise HTTPException(
@@ -460,6 +482,12 @@ def patch_expense(
 
     try:
         db.commit()
+    except StaleDataError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Expense was modified by another request. Fetch the latest version and retry."
+        )
     except SQLAlchemyError:
         db.rollback()
         logger.exception(

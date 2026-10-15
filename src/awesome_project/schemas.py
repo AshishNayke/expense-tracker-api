@@ -19,6 +19,7 @@ class ExpenseResponse(BaseModel):
     amount: Decimal
     category: str
     expense_date: date
+    version: int
 
     model_config = {"from_attributes": True}
 
@@ -50,6 +51,7 @@ class ExpenseUpdate(BaseModel):
     amount: Decimal = Field(gt=0)
     category: str = Field(max_length=255)
     expense_date:date
+    expected_version: int = Field(ge=1)
 
 
 class ExpensePatch(BaseModel):
@@ -57,6 +59,7 @@ class ExpensePatch(BaseModel):
     amount: Decimal = Field(default=None, gt=0)
     category: str = Field(default=None, max_length=255)
     expense_date: date = None
+    expected_version: int = Field(ge=1)
 
 
 class UserCreate(BaseModel):

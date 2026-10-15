@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import ClassVar
 
 from sqlalchemy import (
     CheckConstraint,
@@ -21,6 +22,12 @@ class Expense(Base):
     __tablename__ = "expenses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     category: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -34,6 +41,9 @@ class Expense(Base):
         nullable=False,
     )
 
+    __mapper_args__: ClassVar[dict[str, object]] = {
+        "version_id_col": version,
+    }
 
     __table_args__ = (
         CheckConstraint(

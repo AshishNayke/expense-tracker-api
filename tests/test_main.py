@@ -4,6 +4,7 @@ from unittest.mock import patch
 import jwt
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm.exc import StaleDataError
 
 from awesome_project.config import Settings, settings
 from awesome_project.models import Expense, User
@@ -106,6 +107,7 @@ def test_update_expense(client):
             "amount": "350.00",
             "category": "Restaurant",
             "expense_date": "2026-09-21",
+            "expected_version": create_response.json()["version"],
         },
     )
 
@@ -118,6 +120,7 @@ def test_update_expense(client):
     assert data["amount"] == "350.00"
     assert data["category"] == "Restaurant"
     assert data["expense_date"] == "2026-09-21"
+    assert data["version"] == 2
 
     get_response = client.get(f"/expenses/{expense_id}")
 
@@ -135,6 +138,7 @@ def test_update_expense_not_found(client):
             "amount": "350.00",
             "category": "Restaurant",
             "expense_date": "2026-09-20",
+            "expected_version": 1,
         },
     )
 
@@ -162,6 +166,7 @@ def test_patch_expense(client):
         f"/expenses/{expense_id}",
         json={
             "amount": "300.00",
+            "expected_version": create_response.json()["version"],
         },
     )
 
@@ -180,6 +185,7 @@ def test_patch_expense(client):
         f"/expenses/{expense_id}",
         json={
             "expense_date": "2026-09-23",
+            "expected_version": patch_response.json()["version"],
         },
     )
 
@@ -208,6 +214,7 @@ def test_patch_expense_not_found(client):
         "/expenses/999999",
         json={
             "amount": "300.00",
+            "expected_version": 1,
         },
     )
 
@@ -311,6 +318,7 @@ def test_user_cannot_access_another_users_expense(
             "amount": "9999.00",
             "category": "Other",
             "expense_date": "2026-09-21",
+            "expected_version": 1,
         },
     )
     assert response.status_code == 404
@@ -320,6 +328,7 @@ def test_user_cannot_access_another_users_expense(
         f"/expenses/{expense_id}",
         json={
             "amount": "9999.00",
+            "expected_version": 1,
         },
     )
     assert response.status_code == 404
@@ -341,6 +350,7 @@ def test_user_cannot_access_another_users_expense(
         "amount": "500.00",
         "category": "Food",
         "expense_date": "2026-09-20",
+        "version": 1,
     }
 
 def test_expenses_require_authentication(unauthenticated_client):
@@ -494,6 +504,7 @@ def test_patch_expense_updates_only_provided_field(client):
         f"/expenses/{expense_id}",
         json={
             "amount": "750.00",
+            "expected_version": create_response.json()["version"]
         },
     )
 
@@ -504,6 +515,8 @@ def test_patch_expense_updates_only_provided_field(client):
         "amount": "750.00",
         "category": "Food",
         "expense_date": "2026-09-20",
+        "version": 2,
+
     }
 
 def test_patch_expense_rejects_empty_update(client):
@@ -522,7 +535,7 @@ def test_patch_expense_rejects_empty_update(client):
 
     response = client.patch(
         f"/expenses/{expense_id}",
-        json={},
+        json={"expected_version": 1},
     )
 
     assert response.status_code == 400
@@ -1398,7 +1411,7 @@ def test_create_expenses_in_bulk(
     assert len(data) == len(input_data)
     assert all(isinstance(expense["id"], int) for expense in data)
     assert all(expense["id"] > 0 for expense in data)
-    generated={"id"}
+    generated={"id","version"}
     for sent, received in zip(input_data, data):
         stripped = {k:v for k,v in received.items() if k not in  generated}
         assert stripped == sent
@@ -1714,25 +1727,25 @@ def test_patch_expense_rejects_null(
 
     response = client.patch(
         f"/expenses/{expense_id}",
-        json={"title": None},
+        json={"title": None, "expected_version": 1},
     )
     assert response.status_code == 422
 
     response = client.patch(
         f"/expenses/{expense_id}",
-        json={"title": "Breakfast","amount": "200.00","category":None},
+        json={"title": "Breakfast","amount": "200.00","category":None,"expected_version": 1},
     )
     assert response.status_code == 422
 
     response = client.patch(
         f"/expenses/{expense_id}",
-        json={"title": None,"amount": None,"category": None,"expense_date": None},
+        json={"title": None,"amount": None,"category": None,"expense_date": None,"expected_version": 1},
     )
     assert response.status_code == 422
 
     response = client.patch(
         f"/expenses/{expense_id}",
-        json={"title": "Breakfast","amount": "200.00","category": "Food","expense_date": None},
+        json={"title": "Breakfast","amount": "200.00","category": "Food","expense_date": None,"expected_version": 1},
     )
     assert response.status_code == 422
 
@@ -1786,6 +1799,7 @@ def test_update_expense_database_error(
                 "amount": "2000.00",
                 "category": "Food",
                 "expense_date": "2026-12-01",
+                "expected_version": 1
             },
             headers=auth_headers,
         )
@@ -1822,6 +1836,7 @@ def test_patch_expense_database_error(
             json={
                 "title": "Dinner",
                 "amount": "2000.00",
+                "expected_version": 1
             },
             headers=auth_headers,
         )
@@ -2002,3 +2017,104 @@ def test_login_rate_limit(client):
     retry_after = response.headers.get("Retry-After")
     assert retry_after is not None, "Retry-After header is missing"
     assert int(retry_after) > 0, "Retry-After value must be a positive integer"
+
+def test_update_expense_rejects_stale_version(client):
+    create_response = client.post(
+        "/expenses",
+        json={
+            "title": "Original expense",
+            "amount": "500.00",
+            "category": "Food",
+            "expense_date": "2026-10-15",
+        },
+    )
+
+    assert create_response.status_code == 201
+    expense_id = create_response.json()["id"]
+    original_version = create_response.json()["version"]
+
+    # First client updates the expense successfully.
+    update_response = client.patch(
+        f"/expenses/{expense_id}",
+        json={
+            "amount": "600.00",
+            "expected_version": original_version,
+        },
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["version"] == original_version + 1
+
+    # A second client submits an update based on stale data.
+    stale_response = client.patch(
+        f"/expenses/{expense_id}",
+        json={
+            "amount": "700.00",
+            "expected_version": original_version,
+        },
+    )
+
+    assert stale_response.status_code == 409
+    assert "modified by another request" in stale_response.json()["detail"]
+
+    # Confirm that the stale request did not overwrite the newer value.
+    get_response = client.get(f"/expenses/{expense_id}")
+
+    assert get_response.status_code == 200
+    assert get_response.json()["amount"] == "600.00"
+    assert get_response.json()["version"] == original_version + 1
+
+def test_expense_update_returns_conflict_on_stale_data(
+    client, db, monkeypatch
+):
+    for method in ["put", "patch"]:
+        create_response = client.post(
+            "/expenses",
+            json={
+                "title": "Original expense",
+                "amount": "500.00",
+                "category": "Food",
+                "expense_date": "2026-10-15",
+            },
+        )
+
+        assert create_response.status_code == 201
+        created = create_response.json()
+        expense_id = created["id"]
+
+        def raise_stale_data_error():
+            raise StaleDataError("Simulated concurrent update")
+
+        monkeypatch.setattr(db, "commit", raise_stale_data_error)
+
+        if method == "put":
+            response = client.put(
+                f"/expenses/{expense_id}",
+                json={
+                    "title": "Updated expense",
+                    "amount": "600.00",
+                    "category": "Food",
+                    "expense_date": "2026-10-15",
+                    "expected_version": created["version"],
+                },
+            )
+        else:
+            response = client.patch(
+                f"/expenses/{expense_id}",
+                json={
+                    "amount": "600.00",
+                    "expected_version": created["version"],
+                },
+            )
+
+        assert response.status_code == 409
+        assert "modified by another request" in response.json()["detail"]
+
+        # The failed update must not change the stored expense.
+        monkeypatch.undo()
+
+        get_response = client.get(f"/expenses/{expense_id}")
+
+        assert get_response.status_code == 200
+        assert get_response.json()["amount"] == "500.00"
+        assert get_response.json()["version"] == created["version"]
