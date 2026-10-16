@@ -301,14 +301,21 @@ Install dependencies:
 uv sync
 ```
 
-Create a `.env` file in the project root:
+Create your local environment file from the example template:
 
-```env
-DATABASE_URL=postgresql+psycopg://expense_user:<password>@localhost:5432/expense_tracker
-TEST_DATABASE_URL=postgresql+psycopg://expense_user:<password>@localhost:5432/expense_tracker_test
-SECRET_KEY=<your-secret-key>
-APP_ENV=development
+```bash
+cp .env.example .env
 ```
+
+Edit `.env` and set your database credentials and a unique secret key. The local PostgreSQL server must have both `expense_tracker` and `expense_tracker_test` databases, and the configured database role must have the required permissions.
+
+Generate a development secret key with:
+
+```bash
+uv run python -c "import secrets; print(secrets.token_urlsafe(64))"
+```
+
+Use the generated value for `SECRET_KEY` in `.env`. Keep `.env` private; it is excluded from Git.
 
 Apply migrations:
 
@@ -344,6 +351,17 @@ The project includes a Docker Compose environment containing:
 * PostgreSQL healthcheck
 * API dependency on database health
 
+Before starting Docker, create the environment files from their templates:
+
+```bash
+cp .env.postgres.example .env.postgres
+cp .env.docker.example .env.docker
+```
+
+Replace the placeholders in `.env.postgres` and `.env.docker` with your own values. The PostgreSQL password in `.env.postgres` must match the password in the Docker API's `DATABASE_URL` and `TEST_DATABASE_URL`. URL-encode the password when placing it in a database URL if it contains reserved URL characters.
+
+Set a unique `SECRET_KEY` in `.env.docker`, using the same generation command shown in the local setup section. Keep these local environment files private; they are excluded from Git.
+
 Start the environment:
 
 ```bash
@@ -368,7 +386,7 @@ Expected response:
 {"status": "ok"}
 ```
 
-The Compose PostgreSQL service is published on port `5433` on the host to avoid conflicting with a locally installed PostgreSQL instance.
+The Docker API connects to PostgreSQL using the Compose service hostname `db` on port `5432`. The database is published on host port `5433` for connections from your computer.
 
 Database migrations are applied separately from the Docker image build; rebuilding the application image does not automatically change the database schema.
 
