@@ -355,18 +355,23 @@ Install dependencies:
 uv sync
 ```
 
-Ensure your local PostgreSQL server is running and that the `expense_tracker` and `expense_tracker_test` databases exist, with a role that can connect to and modify them.
+Create your local environment file from the example template:
 
-Create a `.env` file in the project root. Replace the example password and secret with your own values; the secret key must be at least 64 characters long.
-
-```env
-DATABASE_URL=postgresql+psycopg://expense_user:<URL-encoded-password>@localhost:5432/expense_tracker
-TEST_DATABASE_URL=postgresql+psycopg://expense_user:<URL-encoded-password>@localhost:5432/expense_tracker_test
-SECRET_KEY=<a-random-secret-at-least-64-characters-long>
-APP_ENV=development
+```bash
+cp .env.example .env
 ```
 
-The database URLs must match your local PostgreSQL role, password, and database names. URL-encode special characters in the password when placing it in a connection URL. Keep `.env` out of version control.
+Edit `.env` and configure your database credentials and a unique secret key. Your local PostgreSQL server must have both `expense_tracker` and `expense_tracker_test` databases, and the configured database role must have the required permissions.
+
+The database URLs must match your local PostgreSQL role, password, and database names. URL-encode special characters in the password when placing it in a connection URL.
+
+Generate a development secret key with:
+
+```bash
+uv run python -c "import secrets; print(secrets.token_urlsafe(64))"
+```
+
+Set the generated value as `SECRET_KEY` in `.env`. The secret key must be at least 64 characters long. Keep `.env` private; it is excluded from Git.
 
 Apply the schema migrations to the development database:
 
@@ -408,6 +413,17 @@ The project includes a Docker Compose environment containing:
 * PostgreSQL healthcheck
 * API dependency on database health
 
+Before starting Docker, create the environment files from their templates:
+
+```bash
+cp .env.postgres.example .env.postgres
+cp .env.docker.example .env.docker
+```
+
+Replace the placeholders in `.env.postgres` and `.env.docker` with your own values. The PostgreSQL password in `.env.postgres` must match the password in the Docker API's `DATABASE_URL` and `TEST_DATABASE_URL`. URL-encode the password when placing it in a database URL if it contains reserved URL characters.
+
+Set a unique `SECRET_KEY` in `.env.docker`, using the same generation command shown in the local setup section. Keep these local environment files private; they are excluded from Git.
+
 Start the environment:
 
 ```bash
@@ -432,7 +448,7 @@ Expected response:
 {"status": "ok"}
 ```
 
-The Compose PostgreSQL service is published on port `5433` on the host to avoid conflicting with a locally installed PostgreSQL instance.
+The Docker API connects to PostgreSQL using the Compose service hostname `db` on port `5432`. The database is published on host port `5433` for connections from your computer.
 
 Database migrations are applied separately from the Docker image build; rebuilding the application image does not automatically change the database schema.
 
