@@ -29,7 +29,7 @@ The project has evolved from a basic CRUD API into a practical backend-engineeri
 * Amount/date-based ordering
 * Date-range queries and reports
 * Monthly expense reports
-* Bulk expense creation
+* Atomic bulk expense creation with idempotent retries
 
 ### Authentication & Security
 
@@ -47,6 +47,8 @@ The project has evolved from a basic CRUD API into a practical backend-engineeri
 * Pydantic request validation
 * PostgreSQL `NOT NULL`, `UNIQUE`, foreign-key, and `CHECK` constraints
 * Transactional bulk creation
+* Idempotency-key uniqueness enforced by PostgreSQL
+* Replay of stored responses for matching retries
 * Explicit rollback handling for database failures
 * Atomic password and token-version updates
 * Alembic-managed schema evolution
@@ -78,6 +80,7 @@ The project has evolved from a basic CRUD API into a practical backend-engineeri
 * Authentication and authorization tests
 * Validation and error-path tests
 * Database rollback/integration tests
+* Idempotency replay, payload-conflict, rollback/retry, user-scope, and concurrency tests
 * Token revocation tests
 * Ruff linting and formatting checks
 
@@ -193,10 +196,42 @@ awesome-project/
 | GET    | `/expenses`              | List the current user's expenses    |
 | GET    | `/expenses/{expense_id}` | Retrieve a single expense           |
 | POST   | `/expenses`              | Create an expense                   |
-| POST   | `/expenses/bulk`         | Create multiple expenses atomically |
+| POST   | `/expenses/bulk`         | Create multiple expenses atomically with idempotent retries |
 | PUT    | `/expenses/{expense_id}` | Replace an expense                  |
 | PATCH  | `/expenses/{expense_id}` | Partially update an expense         |
 | DELETE | `/expenses/{expense_id}` | Delete an expense                   |
+
+### Idempotent Bulk Creation
+
+`POST /expenses/bulk` requires authentication and an `Idempotency-Key` request header.
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/expenses/bulk \
+  -H "Authorization: Bearer <access-token>" \
+  -H "Idempotency-Key: 8e03978e-40d5-43e8-ae93-74c84a3ac6e1" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "title": "Coffee",
+      "amount": "250.00",
+      "category": "Food",
+      "expense_date": "2026-10-01"
+    }
+  ]'
+```
+
+Generate a key for each logical operation and reuse it when retrying that same operation.
+
+- A new key creates the expense batch and stores the original HTTP status code and response body.
+- Reusing the same key with the same normalized payload replays the stored response without creating the expenses again.
+- Reusing the same key with a different payload returns `409 Conflict`.
+- Keys are scoped to the authenticated user; different users can use the same key independently.
+- A missing, blank, or longer-than-255-character key returns `400 Bad Request`.
+- The request hash is calculated from normalized, validated expense data. Equivalent decimal representations such as `"250.0"` and `"250.00"` are treated as the same amount. The order of expenses in the list remains significant.
+- Expense inserts and the associated idempotency record are committed in one database transaction. If the transaction rolls back, neither is committed and the client can retry.
+- Idempotency records are currently retained indefinitely; no automatic expiration policy is configured.
 
 ### Reporting
 
@@ -552,6 +587,8 @@ Core areas practiced include:
 * JWT expiration and server-side token revocation
 * Query planning and indexing
 * API and database integration testing
+* Idempotency and replay-safe request handling
+* Concurrent request and uniqueness-constraint behavior
 * Logging and health checks
 * Containerized application deployment
 
@@ -561,7 +598,7 @@ The architecture is intentionally kept simple. Additional layers such as reposit
 
 This project is actively developed as a backend-engineering project.
 
-The current implementation includes a complete expense-management API with authentication, reporting, transactional operations, automated tests, performance work, observability, and Docker deployment.
+The current implementation includes a complete expense-management API with authentication, reporting, transactional and idempotent bulk operations, automated tests, performance work, observability, and Docker deployment.
 
 Further development will focus on additional backend features, production hardening, and progressively more advanced engineering concepts.
 
