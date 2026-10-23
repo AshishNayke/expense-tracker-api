@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from awesome_project.database import get_db
 from awesome_project.main import app
@@ -25,6 +25,13 @@ def reset_rate_limiter():
     limiter.reset()
     yield
     limiter.reset()
+
+@pytest.fixture
+def independent_session_factory():
+    return sessionmaker(
+        bind=test_engine,
+        expire_on_commit=False,
+    )
 
 @pytest.fixture
 def db():
