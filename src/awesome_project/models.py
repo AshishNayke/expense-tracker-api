@@ -1,16 +1,19 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from sqlalchemy import (
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -52,11 +55,13 @@ class Expense(Base):
         ),
     )
 
+
 Index(
     "idx_expenses_user_date",
     Expense.user_id,
     Expense.expense_date,
 )
+
 
 class User(Base):
     __tablename__ = "users"
@@ -66,7 +71,36 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     token_version: Mapped[int] = mapped_column(
-    Integer,
-    nullable=False,
-    server_default="0",
-)
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+
+
+class IdempotencyOperation(Base):
+    __tablename__ = "idempotency_operations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_body: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "idempotency_key", name="uq_idempotency_operations_user_key"
+        ),
+        CheckConstraint(
+            "response_status BETWEEN 100 AND 599",
+            name="check_idempotency_response_status",
+        ),
+    )

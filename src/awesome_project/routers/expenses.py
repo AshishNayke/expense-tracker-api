@@ -1,15 +1,17 @@
+import hashlib
+import json
 import logging
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
 from ..database import get_db
-from ..models import Expense, User
+from ..models import Expense, IdempotencyOperation, User
 from ..schemas import (
     ExpenseCategorySummary,
     ExpenseCreate,
@@ -327,41 +329,177 @@ def create_expense(
     db.refresh(new_expense)
     return new_expense
 
+def hash_expense_batch(expenses: list[ExpenseCreate]) -> str:
+    """Return a stable SHA-256 hash for a validated expense batch."""
+    canonical_payload = [
+        {
+            "title": item.title,
+            "amount": format(item.amount.normalize(), "f"),
+            "category": item.category,
+            "expense_date": item.expense_date.isoformat(),
+        }
+        for item in expenses
+    ]
+
+    canonical_json = json.dumps(
+        canonical_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
 @router.post(
     "/bulk",
     response_model=list[ExpenseResponse],
     status_code=status.HTTP_201_CREATED,
-    summary="Create Expenses in Bulk"
+    summary="Create Expenses in Bulk",
 )
 def create_expense_bulk(
     expenses: list[ExpenseCreate],
+    response: Response,
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    user_id = current_user.id
+
+    # 1. Validate the request before doing any database writes.
     if not expenses:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="At least one expense is required"
+            detail="At least one expense is required.",
         )
 
-    user_id = current_user.id
-
-    new_expenses = []
-    for expense in expenses:
-        new_expenses.append(
-        Expense(
-            title=expense.title,
-            amount=expense.amount,
-            category=expense.category,
-            user_id=current_user.id,
-            expense_date=expense.expense_date
+    if idempotency_key is None or not idempotency_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The Idempotency-Key header is required.",
         )
+
+    idempotency_key = idempotency_key.strip()
+
+    if len(idempotency_key) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key must not exceed 255 characters.",
+        )
+
+    # 2. Identify the logical request.
+    request_hash = hash_expense_batch(expenses)
+
+    operation_query = select(IdempotencyOperation).where(
+        IdempotencyOperation.user_id == user_id,
+        IdempotencyOperation.idempotency_key == idempotency_key,
     )
 
+    existing_operation = db.scalar(operation_query)
+
+    # 3. Handle ordinary retries before inserting anything.
+    if existing_operation is not None:
+        if existing_operation.request_hash != request_hash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Idempotency key reused with a different request payload."
+                ),
+            )
+
+        response.status_code = existing_operation.response_status
+        return existing_operation.response_body
+
+    # 4. Insert expenses and store the response in one transaction.
     try:
+        new_expenses = [
+            Expense(
+                user_id=user_id,
+                title=item.title,
+                amount=item.amount,
+                category=item.category,
+                expense_date=item.expense_date,
+            )
+            for item in expenses
+        ]
+
         db.add_all(new_expenses)
+
+        # Send the expense INSERT statements to PostgreSQL.
+        # Generated IDs and ORM version values should now be available.
         db.flush()
+
+
+        response_body = [
+            ExpenseResponse.model_validate(expense).model_dump(mode="json")
+            for expense in new_expenses
+        ]
+
+        operation = IdempotencyOperation(
+            user_id=user_id,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            response_status=status.HTTP_201_CREATED,
+            response_body=response_body,
+        )
+
+        db.add(operation)
+
+        # This flush can lose a race against another request using the
+        # same key. Catch that particular constraint violation below.
+        try:
+            db.flush()
+
+        except IntegrityError as exc:
+            constraint_name = getattr(
+                getattr(exc.orig, "diag", None),
+                "constraint_name",
+                None,
+            )
+
+            # The session cannot be used normally after a failed flush
+            # until we roll back the failed transaction.
+            db.rollback()
+
+            if constraint_name != "uq_idempotency_operations_user_key":
+                # This was a different integrity error, not the expected
+                # idempotency-key race. Let the outer handler deal with it.
+                raise
+
+            # Another request committed an operation with this key.
+            # Our uncommitted expense inserts have also been rolled back.
+            winner_operation = db.scalar(operation_query)
+
+            if winner_operation is None:
+                logger.error(
+                    "Idempotency key conflict occurred but no winning "
+                    "operation was found for user %s",
+                    user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Could not resolve the idempotency-key conflict.",
+                ) from exc
+
+            # A competing request may have used the same key with
+            # a different payload, so compare hashes again.
+            if winner_operation.request_hash != request_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Idempotency key reused with a different "
+                        "request payload."
+                    ),
+                )
+
+            response.status_code = winner_operation.response_status
+            return winner_operation.response_body
+
+        # The expenses and their replayable response become durable together.
         db.commit()
+
     except SQLAlchemyError:
         db.rollback()
         logger.exception(
@@ -374,10 +512,8 @@ def create_expense_bulk(
             detail="Internal server error",
         )
 
-    for expense in new_expenses:
-        db.refresh(expense)
-
-    return new_expenses
+    response.status_code = status.HTTP_201_CREATED
+    return response_body
 
 
 @router.put(
