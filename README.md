@@ -455,7 +455,7 @@ cp .env.postgres.example .env.postgres
 cp .env.docker.example .env.docker
 ```
 
-Replace the placeholders in `.env.postgres` and `.env.docker` with your own values. The PostgreSQL password in `.env.postgres` must match the password in the Docker API's `DATABASE_URL` and `TEST_DATABASE_URL`. URL-encode the password when placing it in a database URL if it contains reserved URL characters.
+Replace the placeholders in `.env.postgres` and `.env.docker` with your own values. The PostgreSQL password in `.env.postgres` must match the password in the Docker API's `DATABASE_URL`. URL-encode the password when placing it in a database URL if it contains reserved URL characters.
 
 Set a unique `SECRET_KEY` in `.env.docker`, using the same generation command shown in the local setup section. Keep these local environment files private; they are excluded from Git.
 
