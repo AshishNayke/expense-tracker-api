@@ -483,7 +483,7 @@ Expected response:
 {"status": "ok"}
 ```
 
-The Docker API connects to PostgreSQL internally using the Compose service hostname `db` on port `5432`. The database is published on `127.0.0.1:5433` for local host access only.
+The API is published on `127.0.0.1:8000` for local host access only. The Docker API connects to PostgreSQL internally using the Compose service hostname `db` on port `5432`. PostgreSQL is published on `127.0.0.1:5433` for local host access only.
 
 Database migrations are applied separately from the Docker image build; rebuilding the application image does not automatically change the database schema.
 
