@@ -483,13 +483,13 @@ Expected response:
 {"status": "ok"}
 ```
 
-The Docker API connects to PostgreSQL using the Compose service hostname `db` on port `5432`. The database is published on host port `5433` for connections from your computer.
+The Docker API connects to PostgreSQL internally using the Compose service hostname `db` on port `5432`. The database is published on `127.0.0.1:5433` for local host access only.
 
 Database migrations are applied separately from the Docker image build; rebuilding the application image does not automatically change the database schema.
 
 ### Apply migrations to the Docker database
 
-The API container image intentionally excludes development dependencies and the Alembic migration directory, so run migrations from your host while the Compose database is running. The host port is `5433`; inside Docker, the database is reachable as `db:5432`.
+The API container image intentionally excludes development dependencies and the Alembic migration directory, so run migrations from your host while the Compose database is running. The database is accessible locally via `127.0.0.1:5433`, while inside Docker it remains reachable as `db:5432`.
 
 The `.env.docker` file already contains the Docker database URL. The following command reads that URL and changes only its host and port for a host-side migration. It does not print the URL or require you to copy the password into the command:
 
