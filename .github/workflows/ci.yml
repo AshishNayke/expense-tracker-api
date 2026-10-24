@@ -63,3 +63,48 @@ jobs:
 
       - name: Build Docker image
         run: docker build --tag expense-tracker-api:ci .
+
+      - name: Smoke test Docker container
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          container_name=expense-tracker-api-smoke
+
+          cleanup() {
+            status=$?
+            trap - EXIT
+
+            if [ "$status" -ne 0 ]; then
+              docker logs "$container_name" || true
+            fi
+
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --network host \
+            --env "DATABASE_URL=$DATABASE_URL" \
+            --env "SECRET_KEY=$SECRET_KEY" \
+            --env "APP_ENV=production" \
+            expense-tracker-api:ci
+
+          for attempt in $(seq 1 30); do
+            if response=$(curl --silent --fail \
+              http://127.0.0.1:8000/health); then
+              echo "Health endpoint response: $response"
+
+              if [ "$response" = '{"status":"ok"}' ]; then
+                echo "Docker container smoke test passed."
+                exit 0
+              fi
+            fi
+
+            sleep 1
+          done
+
+          echo "Container failed to become healthy within 30 seconds." >&2
+          exit 1
