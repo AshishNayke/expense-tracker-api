@@ -2558,3 +2558,55 @@ def test_bulk_create_same_key_concurrently(independent_session_factory):
                 delete(User).where(User.id == user_id)
             )
             cleanup_db.commit()
+
+def test_expense_update_empty_title_rejected(client):
+    """PUT and PATCH must reject empty titles."""
+
+    create_response = client.post(
+        "/expenses",
+        json={
+            "title": "Lunch",
+            "amount": "250.00",
+            "category": "Food",
+            "expense_date": "2026-10-23",
+        },
+    )
+
+    assert create_response.status_code == 201
+
+    expense = create_response.json()
+    expense_id = expense["id"]
+    version = expense["version"]
+
+    # PUT: all required fields are valid except the title.
+    put_response = client.put(
+        f"/expenses/{expense_id}",
+        json={
+            "title": "",
+            "amount": "250.00",
+            "category": "Food",
+            "expense_date": "2026-10-23",
+            "expected_version": version,
+        },
+    )
+
+    assert put_response.status_code == 422
+    assert any(
+        error["loc"][-1] == "title"
+        for error in put_response.json()["detail"]
+    )
+
+    # PATCH: the version is valid, but the supplied title is empty.
+    patch_response = client.patch(
+        f"/expenses/{expense_id}",
+        json={
+            "title": "",
+            "expected_version": version,
+        },
+    )
+
+    assert patch_response.status_code == 422
+    assert any(
+        error["loc"][-1] == "title"
+        for error in patch_response.json()["detail"]
+    )
