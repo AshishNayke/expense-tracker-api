@@ -47,7 +47,7 @@ class MonthlyDailyReport(BaseModel):
     daily: list[ExpenseDailySummary]
 
 class ExpenseUpdate(BaseModel):
-    title: str = Field(max_length=255)
+    title: str = Field(min_length=1, max_length=255)
     amount: Decimal = Field(gt=0,max_digits=10,decimal_places=2)
     category: str = Field(max_length=255)
     expense_date:date
@@ -55,7 +55,7 @@ class ExpenseUpdate(BaseModel):
 
 
 class ExpensePatch(BaseModel):
-    title: str = Field(default=None, max_length=255)
+    title: str = Field(default=None,min_length=1, max_length=255)
     amount: Decimal = Field(default=None, gt=0,max_digits=10,decimal_places=2)
     category: str = Field(default=None, max_length=255)
     expense_date: date = None
