@@ -55,6 +55,11 @@ jobs:
       - name: Apply database migrations
         run: uv run alembic -x test=true upgrade head
 
+      - name: Verify migration downgrade and re-upgrade
+        run: |
+          uv run alembic -x test=true downgrade 9bcc9b2f41dd
+          uv run alembic -x test=true upgrade head
+
       - name: Check code with Ruff
         run: uv run ruff check .
 
