@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from awesome-project!")
+"""Expense Tracker API application package."""

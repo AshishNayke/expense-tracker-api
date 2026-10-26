@@ -1,5 +1,5 @@
 [project]
-name = "awesome-project"
+name = "expense-tracker-api"
 version = "0.1.0"
 description = "A REST API for managing personal expenses"
 readme = "README.md"
@@ -19,9 +19,6 @@ dependencies = [
     "uvicorn[standard]>=0.52.4",
 ]
 
-[project.scripts]
-awesome-project = "awesome_project:main"
-
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
 build-backend = "uv_build"
@@ -33,6 +30,9 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.6",
 ]
+
+[tool.uv.build-backend]
+module-name = "awesome_project"
 
 [tool.ruff.lint]
 ignore = ["B008"]
